@@ -1,5 +1,5 @@
+# Z80 Starter Kit Restoration
 <img align="left" src="images/EM180-n-Z80SDK-rotated-1750x1030.png" alt="Z80 Starter Kit and EM180">
-# Z80StarterKit
 Programming a Z80 like it was 1979. A rescued S.D. Systems Z80 Starter Kit and Applied Microsystems EM180 Diganostic Emulator. I'm restoring it to working order.
 
 # Details
