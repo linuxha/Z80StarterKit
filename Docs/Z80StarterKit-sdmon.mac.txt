@@ -1,0 +1,1116 @@
+;
+; S. D. Systems Z-80 Monitor for the SBC-200
+;
+                org     0e000h
+;
+sinit:          jp      serialinit
+nsinit:         jp      noserinit
+stat:           jp      status
+in:             jp      input
+pr:             jp      print
+;
+serialinit:     in      a,(7fh)
+                ld      hl,0ff60h
+                ld      (0ffe6h),hl
+                xor     a
+                ld      (0ffc0h),a
+                ld      a,4eh        ; initialize CTC
+                out     (7dh),a      ;      and UART
+                ld      a,37h
+                out     (7dh),a
+                ld      a,5
+                out     (78h),a
+                ld      a,1
+                out     (78h),a
+                in      a,(1)
+noserinit:      xor     a
+                ld      (0fffah),a
+                ld      a,1
+                ld      (0ffc6h),a
+init0:          ld      sp,0ffc0h
+                call    crlf         ; CR/LF
+                ld      c,'.'
+                call    pr           ; print
+                call    inandpr      ; input & display
+                cp      '.'
+                jr      z,init0
+                push    bc
+                call    0e6ffh       ; space
+                call    0e784h
+                pop     bc
+                ld      a,c
+                ld      hl,init0     ; set return to
+                push    hl           ;    command loop
+                ld      hl,(0ffd2h)
+                ld      de,(0ffd0h)
+                ld      iy,0ffc0h
+;
+;  Is it a 'B' -- Breakpoint?
+;
+                cp      'B'
+                jr      nz,tryG      ; no, try 'G'
+                push    de
+                ld      a,(0ffc0h)
+                bit     0,a
+                jr      z,brkpt1
+                ld      de,(0ffc4h)
+                ld      hl,0ffc1h
+                ld      bc,003
+                ldir                                          
+                xor     a                                     
+                ld      (0ffc0h),a                            
+brkpt1:         ld      a,(0ffc7h)                            
+                and     a                                     
+                pop     hl                                    
+                jr      z,brkpt2
+                ld      (0ffc4h),hl                           
+                push    hl                                    
+                ld      de,0ffc1h                             
+                ld      bc,003                                
+                push    bc                                    
+                ldir                                          
+                ld      hl,0e09dh                             
+                pop     bc                                    
+                pop     de                                    
+                ldir                                          
+                ld      a,1                                   
+                ld      (0ffc0h),a                            
+brkpt2:         ret                                           
+;
+                jp      0e591h                                
+;
+;  Is it a 'G' -- Go?
+;
+tryG:           cp      'G'                                   
+                jr      nz,tryR      ; no, try 'R'
+                ld      a,(0ffc7h)                            
+                and     a                                     
+                jr      z,go1
+                ld      (0fffeh),de                           
+                pop     af                                    
+go1:            ld      a,1                                   
+                ld      (0ffc9h),a                            
+                jp      0e5d2h                                
+;
+;  Is it an 'R' -- Read?
+;
+tryR:           cp      'R'                                   
+                jr      nz,tryW      ; no, try 'W'
+                call    io            
+                jp      0f02dh                                
+;
+;  Is it a 'W' -- Write?
+;
+tryW:           cp      'W'                                   
+                jr      nz,tryZ      ; no, try 'Z'
+                call    io
+                jp      0f030h                                
+;
+io:             ld      a,(0ffc7h)                            
+                cp      5                                     
+                jp      c,0e407h                              
+                ld      (040h),de                             
+                ld      a,l                                   
+                ld      (042h),a                              
+                ld      a,(0ffd4h)                            
+                ld      (044h),a                              
+                ld      a,(0ffd6h)                            
+                ld      (043h),a                              
+                ld      a,(0ffd8h)                            
+                ld      (045h),a                              
+                ret                                           
+;
+;  Is it a 'Z' -- Format (IBM 3740)?
+;
+tryZ:           cp      'Z'                                   
+                jr      nz,tryQ      ; no, try 'Q'
+                ld      a,(0ffc7h)                            
+                dec     a                                     
+                jp      nz,0e407h                             
+                ld      a,e                                   
+                ld      (042h),a                              
+                xor     a                                     
+                ld      (044h),a                              
+                inc     a                                     
+                ld      (043h),a                              
+                call    0f018h                                
+z1:             in      a,(63h)                               
+                or      'P'                                   
+                out     (63h),a                               
+                call    0f033h                                
+                call    0e125h                                
+                jr      z,z2
+                res     4,a                                   
+                out     (63h),a                               
+                call    0f033h                                
+z2:             call    0e12ah                                
+                jr      nz,z1
+                jp      0f018h                                
+;
+e125:           in      a,(63h)                               
+                bit     5,a                                   
+                ret                                           
+;
+e12a:           ld      a,(044h)                              
+                inc     a                                     
+                ld      (044h),a                              
+                ld      b,a                                   
+                ld      a,(0f040h)                            
+                cp      b                                     
+                ret                                           
+;
+;  Is it a 'Q' -- ?
+;
+tryQ:           cp      'Q'                                   
+                jr      nz,tryM
+                ld      a,e                                   
+                ld      (042h),a                              
+q1:             xor     a                                     
+                ld      (044h),a                              
+q2:             ld      a,1
+                ld      (043h),a                              
+                ld      a,(0f03fh)                            
+                ld      b,a                                   
+                call    0e125h                                
+                jr      z,q3
+                sla     b                                     
+q3:             ld      a,b                                   
+                ld      (045h),a                              
+                ld      hl,100h                               
+                ld      (040h),hl                             
+                call    0f02dh                                
+                call    0e57ch                                
+                call    0e12ah                                
+                jr      nz,q2                              
+                ld      c,'P'                                 
+                call    0e00ch                                
+                jr      q1
+;
+;  Is it an 'M' -- Move memory?
+;
+tryM:           cp      'M'
+                jr      nz,tryC       ; no, try 'C'
+                call    0e589h                                
+                ld      b,h                                   
+                ld      c,l                                   
+                ex      de,hl                                 
+                ld      de,(0ffd4h)                           
+                or      a                                     
+                sbc     hl,de                                 
+                jr      nc,m1
+                ld      hl,(0ffd4h)                           
+                add     hl,bc                                 
+                dec     hl                                    
+                ld      d,h                                   
+                ld      e,l                                   
+                ld      hl,(0ffd2h)                           
+                lddr                                          
+                jr      m2
+;
+m1:             ld      hl,(0ffd0h)                           
+                ldir                                          
+m2:             ret                                           
+;
+;  Is it a 'C' -- Boot CP/M?
+;
+tryC:           cp      'C'                                   
+                jp      z,0f003h       ; yes, jump to boot
+;
+;  Is it an 'H' -- Hex arithmetic?
+;
+tryH:           cp      'H'                                   
+                jr      nz,tryX        ; no, try 'X'
+                push    hl                                    
+                add     hl,de                                 
+                ld      c,'+'                                 
+                call    0e00ch                                
+                call    0e7beh                                
+                call    0e6ffh                                
+                pop     hl                                    
+                ex      de,hl                                 
+                or      a                                     
+                sbc     hl,de                                 
+                ld      c,'-'                                 
+                call    0e00ch                                
+                call    0e7beh                                
+                jp      0e036h                                
+;
+;  Is it an 'X' -- Display registers?
+;
+tryX:           cp      'X'
+                jr      nz,tryI        ; no, try 'I'
+                xor     a                                     
+                cp      e                                     
+                call    nz,0e704h                             
+                ld      a,(0ffc7h)                            
+                cp      2                                     
+                jr      nz,regs1
+                ld      a,(0ffd2h)                            
+                ld      (0ffc6h),a                            
+regs1:          jp      0e646h                                
+;
+;  Is it an 'I' -- Input?
+;
+tryI:           cp      'I'                                   
+                jr      nz,tryO        ; no, try 'O'
+                res     0,(iy+0ah)                            
+                ld      a,(0ffd0h)                            
+                ld      c,a                                   
+                ld      b,1                                   
+                ld      a,(0ffc7h)                            
+                cp      2                                     
+                jr      c,inp1
+                ld      a,(0ffd2h)                            
+                ld      b,a                                   
+                or      a                                     
+                jr      nz,inp1
+                set     0,(iy+0ah)                            
+inp1:           ld      a,c                                   
+                call    0e6ech                                
+                in      a,(c)                                 
+                call    0e6ech                                
+                call    0e57ch                                
+                push    bc                                    
+                call    0e6f5h                                
+                pop     bc                                    
+                bit     0,(iy+0ah)                            
+                jr      nz,inp1
+                djnz    inp1
+                ret                                           
+;
+;  Is it an 'O' -- Output?
+;
+tryO:           cp      'O'
+                jr      nz,tryF        ; no, try 'F'
+                res     0,(iy+0ah)
+                ld      a,(0ffd0h)
+                ld      c,a
+                ld      a,(0ffd2h)                            
+                ld      d,a                                   
+                ld      b,1                                   
+                ld      a,(0ffc7h)                            
+                cp      3                                     
+                jr      c,out1
+                ld      a,(0ffd4h)                            
+                ld      b,a                                   
+                or      a                                     
+                jr      nz,out1
+                set     0,(iy+0ah)                            
+out1:           out     (c),d
+                call    0e57ch
+                bit     0,(iy+0ah)                            
+                jr      nz,out1
+                djnz    out1
+                ret                                           
+;
+;  Is it an 'F' -- Fill?
+;
+tryF:           cp      'F'
+                jr      nz,tryL        ; no, try 'L'
+                ld      a,(0ffd4h)                            
+                push    hl                                    
+                call    0e589h                                
+                pop     hl                                    
+fill1:          ld      (de),a                                
+                push    hl                                    
+                or      a                                     
+                sbc     hl,de                                 
+                pop     hl                                    
+                inc     de                                    
+                jr      nz,fill1
+                ret                                           
+;
+;  Is it an 'L' -- Locate string?
+;
+tryL:           cp      'L'
+                jr      nz,tryV       ; no, try 'V'
+                call    0e589h                                
+                ld      a,(0ffc7h)                            
+                sub     3                                     
+                jp      c,0e407h                              
+                ld      b,a                                   
+                inc     a                                     
+                ld      (0ffc7h),a                            
+                ld      hl,0ffd5h                             
+                ld      de,0ffd6h                             
+loc1:           ld      a,(de)                                
+                ld      (hl),a                                
+                inc     hl                                    
+                inc     de                                    
+                inc     de                                    
+                djnz    loc1
+loc4:           ld      a,(0ffc7h)                            
+                ld      b,a                                   
+                ld      hl,(0ffd0h)                           
+                ld      de,0ffd4h                             
+loc2:           ld      a,(de)                                
+                cp      (hl)                                  
+                jr      nz,loc3
+                inc     hl                                    
+                inc     de                                    
+                djnz    loc2
+                ld      hl,(0ffd0h)                           
+                call    0e7beh                                
+                call    0e6f5h                                
+                call    0e57ch                                
+loc3:           ld      hl,(0ffd2h)                           
+                ld      de,(0ffd0h)                           
+                or      a                                     
+                sbc     hl,de                                 
+                ret     z                                     
+                inc     de                                    
+                ld      (0ffd0h),de                           
+                jr      loc4
+;
+;  Is it a 'V' -- Verify memory?
+;
+tryV:           cp      'V'
+                jr      nz,tryT       ; no, try 'T'
+                call    0e589h                                
+                push    hl                                    
+                pop     bc                                    
+                ex      de,hl                                 
+                ld      de,(0ffd4h)                           
+v1:             ld      a,(de)                                
+                cpi                                           
+                inc     de                                    
+                jr      nz,v2
+                ret     po                                    
+                jr      v1
+;
+v2:             push    af
+                push    bc                                    
+                push    de                                    
+                dec     hl                                    
+                call    0e7beh                                
+                ld      a,(hl)                                
+                inc     hl                                    
+                call    0e6ech                                
+                pop     de                                    
+                push    de                                    
+                push    hl                                    
+                ex      de,hl                                 
+                dec     hl                                    
+                call    0e7beh                                
+                ld      a,(hl)                                
+                call    0e713h                                
+                call    0e6f5h                                
+                pop     hl                                    
+                pop     de                                    
+                pop     bc                                    
+                pop     af                                    
+                ret     po                                    
+                call    0e57ch                                
+                jr      v1
+;
+;  Is it a 'T' -- Test memory?
+;
+tryT:           cp      'T'
+                jr      nz,tryD       ; no, try 'D'
+                ex      de,hl                                 
+                inc     de                                    
+                ld      b,0                                   
+t1:             ld      hl,(0ffd0h)                           
+t2:             ld      a,l                                   
+                xor     h                                     
+                xor     b                                     
+                ld      (hl),a                                
+                inc     hl                                    
+                push    hl                                    
+                or      a                                     
+                sbc     hl,de                                 
+                pop     hl                                    
+                jr      nz,t2
+                ld      hl,(0ffd0h)                           
+t3:             ld      a,l                                   
+                xor     h                                     
+                xor     b                                     
+                cp      (hl)                                  
+                call    nz,0e318h                             
+                inc     hl                                    
+                push    hl                                    
+                or      a                                     
+                sbc     hl,de                                 
+                pop     hl                                    
+                jr      nz,t3
+                inc     b                                     
+                call    0e57ch                                
+                ld      c,'P'                                 
+                call    pr
+                jr      t1
+;
+e318:           push    af                                    
+                call    0e7beh                                
+                pop     af                                    
+                call    0e6ech                                
+                ld      a,(hl)                                
+                call    0e6ech                                
+                jp      0e6f5h                                
+;
+;  Is it a 'D' -- Dump memory?
+;
+tryD:           cp      'D'
+                jp      nz,tryE       ; no, try 'E'
+                res     0,(iy+0ah)                            
+                ex      de,hl                                 
+                ld      a,(0ffc7h)                            
+                cp      2                                     
+                jr      nc,d2
+d1:             ld      de,0ffh                               
+                push    hl                                    
+                add     hl,de                                 
+                ld      (0ffd2h),hl                           
+                pop     hl                                    
+d2:             call    0e6f5h                                
+                push    hl                                    
+                pop     bc                                    
+                push    hl                                    
+                ld      hl,(0ffd2h)                           
+                or      a                                     
+                sbc     hl,bc                                 
+                jp      c,0e407h                              
+                ld      bc,00fh                               
+                or      a                                     
+                sbc     hl,bc                                 
+                ld      b,10h                                 
+                jr      z,d3
+                jp      nc,0e364h                             
+                ld      a,l                                   
+                add     a,b                                   
+                ld      b,a                                   
+d3:             set     0,(iy+0ah)                            
+                pop     hl                                    
+                push    bc                                    
+                call    0e7beh                                
+                pop     bc                                    
+                call    0e666h                                
+                call    0e57ch                                
+                bit     0,(iy+0ah)                            
+                jr      z,d2
+d4:             call    stat
+                jr      z,d4
+                call    0e009h                                
+                cp      '.'                                   
+                ret     z                                     
+                cp      ' '                                   
+                jr      nz,d4
+                res     0,(iy+0ah)                            
+                call    0e6f5h                                
+                jr      d1
+;
+;  Is it an 'E' -- Examine memory?
+;
+tryE:           cp      'E'
+                jp      nz,tryP        ; no, try 'P'
+                ex      de,hl                                 
+e1:             call    0e7beh
+                ld      a,(hl)
+                call    0e713h
+                ld      c,'-'
+                call    pr
+                push    hl
+                call    0e784h
+                pop     hl
+                ld      a,(0ffc8h)
+                cp      '.'
+                ret     z
+                ld      a,(0ffc7h)
+                and     3
+                jr      z,e3c1
+                ld      a,(0ffd0h)
+                ld      (hl),a
+                inc     hl
+                ld      a,(0ffc8h)
+                cp      0dh
+                jr      z,e1
+e2:             dec     hl
+                jr      e1
+;
+e3c1:           ld      a,(0ffc8h)                            
+                cp      '^'                                   
+                jr      z,e2
+                inc     hl                                    
+                jr      e1
+;
+;  Is it a 'P' -- Examine port?
+;
+tryP:           cp      'P'
+                jr      nz,tryS         ; no, try 'S'
+                ld      a,(0ffd0h)
+                ld      c,a
+p1:             ld      a,c
+                call    0e6ech
+                in      a,(c)
+                call    0e6ech
+                push    bc
+                call    0e784h
+                pop     bc
+                ld      a,(0ffc8h)
+                cp      '.'
+                ret     z
+                ld      h,a
+                ld      a,(0ffc7h)
+                and     a
+                jr      z,e3fb
+                ld      a,(0ffd0h)                            
+                out     (c),a                                 
+                ld      a,'^'                                 
+                cp      h                                     
+                jr      z,p1
+p2:             inc     c
+                jr      p1
+;
+e3fb:           ld      a,'^'
+                cp      h
+                jr      nz,p2
+                dec     c
+                jr      p1
+;
+;  Is it an 'S' -- Single step?
+;
+tryS:           cp      'S'                                   
+                jr      z,onestep      ; yes, do it
+                ld      c,'?'          ; command not
+                call    pr             ;    recognized
+                jp      init0          ; error
+;
+;  Do single step
+;
+onestep:        pop     af
+                call    0e704h
+                ld      a,(0ffc7h)
+                and     a
+                jr      z,s1
+                ex      de,hl
+                ld      (0fffeh),hl
+s1:             ld      a,(0ffd2h)
+                and     a
+                jr      nz,s2
+                inc     a
+s2:             ld      (0ffc9h),a
+                xor     a
+                ld      (0ffc7h),a
+                call    0e064h
+                ld      de,(0fffeh)
+                ld      a,(de)
+                cp      '@'
+                jr      c,s3
+                cp      0c0h
+                jp      c,0e511h
+s3:             and     3
+                ld      b,a
+                ld      a,(de)
+                rra
+                rra
+                and     1fh
+                push    bc
+                ld      bc,0e558h
+                add     a,c
+                ld      l,a                                   
+                ld      h,b
+                pop     bc
+                ld      a,(hl)
+                inc     b
+s4:             djnz    e479
+                and     3                                     
+                jp      z,0e4fch                              
+                push    af                                    
+                ld      a,(de)                                
+                ld      hl,(0fff4h)                           
+                cp      0e9h                                  
+                jp      z,0e5c5h                              
+                cp      0c3h                                  
+                jr      z,e4d3
+                cp      0cdh
+                jr      z,e4d3
+                cp      0c9h                                  
+                jr      z,e4ca
+                cp      10h                                   
+                jr      nz,e47f
+                ld      hl,0fff9h
+                dec     (hl)
+                jr      nz,e4bc
+                inc     (hl)                                  
+s5:             jp      0e532h                                
+;
+e479:           srl     a
+                srl     a
+                jr      s4
+;
+e47f:           cp      18h
+                jr      z,e4bc
+                cp      80h
+                jr      nc,e491
+                xor     ' '
+                ld      b,a
+                and     'g'
+                jr      nz,s5
+                ld      a,b
+                jr      e49e
+;
+e491:           and     0c7h
+                cp      0c2h
+                jr      z,e49d
+                and     0c3h
+                cp      0c0h
+                jr      nz,e4e0
+e49d:           ld      a,(de)
+e49e:           and     '0'
+                ld      hl,0e577h
+e4a3:           inc     hl
+                sub     10h
+                jr      nc,e4a3
+                ld      a,(0fffch)                            
+                and     (hl)                                  
+                ld      a,(de)                                
+                jr      z,e4b0
+                cpl
+e4b0:           bit     3,a
+                jr      nz,s5
+                pop     af
+                push    af
+                cp      2
+                jr      c,e4ca
+                jr      nz,e4d3
+e4bc:           inc     de
+                ld      a,(de)
+                inc     de
+                ld      l,a
+                rla
+                ld      h,0
+                jr      nc,e4c6
+                dec     h
+e4c6:           add     hl,de
+                jr      e4f9
+;
+e4c9:           dec     de
+e4ca:           ld      hl,(0ffe6h)
+                ld      a,(hl)
+                inc     hl
+                ld      h,(hl)
+                ld      l,a
+                jr      e537
+;
+e4d3:           ld      a,(de)
+                bit     2,a
+                inc     de
+                ld      a,(de)
+                ld      l,a
+                inc     de
+                ld      a,(de)
+                ld      h,a
+                jr      nz,e537
+                jr      e4f9
+;
+e4e0:           ld      a,(de)
+                and     0c7h
+                cp      0c7h
+                ld      a,(de)
+                jr      nz,e4ef
+                and     '8'
+                ld      l,a
+                ld      h,0
+                jr      e537
+;
+e4ef:           cp      0fbh
+                jr      nz,e532
+                cpl
+                ld      (0fffah),a
+                ex      de,hl
+                inc     hl
+e4f9:           jp      0e5c5h
+;
+e4fc:           ld      a,(de)
+                inc     de
+                cp      0edh
+                jr      nz,e515
+                ld      b,3
+                ld      a,(de)
+                and     0f7h                                  
+                cp      'E'
+                jr      z,e4c9
+                and     0c7h
+                cp      'C'
+                jr      z,e533
+                ld      b,1
+                jr      e533
+;
+e515:           cp      0ddh
+                ld      hl,(0ffeah)
+                jr      z,e51f
+                ld      hl,(0ffe8h)
+e51f:           ld      a,(de)
+                cp      0e9h
+                jr      z,e4f9
+                ld      hl,0e553h
+                ld      bc,5
+                cpir
+                jr      nz,e53d
+                inc     b
+e52f:           inc     b
+e530:           inc     b
+                push    bc
+e532:           pop     bc
+e533:           ex      de,hl
+e534:           inc     hl
+                djnz    e534
+e537:           call    0e083h
+                jp      0e5d2h
+;
+e53d:           and     0feh
+                cp      '4'
+                jr      z,e52f
+                ld      a,(de)
+                and     7
+                cp      6
+                jr      z,e52f
+                ld      a,(de)
+                and     0f8h
+                cp      'p'
+                jr      z,e52f
+                jr      e530
+;
+e553:           ld      hl,2a22h
+                ld      (hl),0cbh
+                ld      e,l
+                ld      h,l
+                ld      d,l
+                ld      h,l
+                ld      e,(hl)
+                ld      h,l
+                ld      d,(hl)
+                ld      h,l
+                ld      a,(hl)
+                ld      h,l
+                halt
+;
+e563:           ld      h,l
+                ld      a,(hl)
+                ld      h,l
+                halt
+;
+e567:           ld      h,l
+                push    af
+                ld      h,a
+                or      l
+                ld      l,a
+                or      l
+                ld      h,a
+                or      l
+                ld      h,e
+                ld      (hl),l
+                ld      h,a
+                ld      (hl),l
+                ld      h,e
+                ld      (hl),l
+                ld      h,a
+                ld      (hl),l
+                ld      h,e
+                ld      b,b
+                ld      bc,8004h
+                call    0e006h
+                ret     z
+                call    in
+                cp      '.'
+                ret     nz
+                jp      init0
+;
+e589:           or      a
+                sbc     hl,de
+                jp      c,0e407h
+                inc     hl
+                ret
+;
+e591:           ld      (0ffe6h),sp
+                ld      sp,0
+                push    af
+                push    af
+                or      a
+                ld      a,i
+                push    af
+                di
+                push    bc
+                push    de
+                push    hl
+                exx
+                ex      af,af'
+                push    af
+                push    bc
+                push    de
+                push    hl
+                ld      a,(0fffah)
+                and     4
+                ld      (0fffah),a
+                exx
+                ex      af,af'
+                push    ix
+                push    iy
+                ld      hl,0ffc1h
+                ld      de,(0ffc4h)
+                ld      bc,3
+                ldir
+                ld      hl,(0ffc4h)
+                ld      a,80h
+                ld      (0ffc0h),a
+                ld      (0fffeh),hl
+                ld      sp,0ffc0h
+                jr      e604
+;
+e5d2:           ld      sp,(0ffe6h)
+                ld      hl,(0fffeh)
+                push    hl
+                ld      hl,(0fffch)
+                push    hl
+                ld      (0ffe4h),sp
+                ld      sp,0ffe8h
+                pop     iy
+                pop     ix
+                exx
+                ex      af,af'
+                pop     hl
+                pop     de
+                pop     bc
+                pop     af
+                exx
+                ex      af,af'
+                pop     hl
+                pop     de
+                pop     bc
+                pop     af
+                ld      i,a
+                ld      sp,(0ffe4h)
+                jp      pe,0e601h
+                pop     af
+                di
+                ret
+;
+e601:           pop     af
+                ei
+                ret
+;
+e604:           call    0e646h
+                ld      a,(0ffc0h)
+                ld      b,a
+                xor     a
+                ld      (0ffc0h),a
+                ld      hl,0ffc9h
+                dec     (hl)
+                jr      z,e61c
+                call    stat
+                jr      nz,e61c
+                jr      e63f
+;
+e61c:           call    0e77dh
+                cp      '.'
+                jp      z,init0
+                cp      0dh
+                jr      z,e63d
+                cp      ' '
+                jr      nz,e61c
+                xor     a
+                cp      (hl)
+                ld      (hl),0
+                jr      nz,e61c
+                call    0e6f5h
+                call    0e704h
+                ld      a,0bh
+                jp      0e424h
+;
+e63d:           ld      (hl),1
+e63f:           call    0e6f5h
+                ld      a,(hl)
+                jp      0e424h
+;
+e646:           ld      hl,(0fffeh)
+                call    0e7beh
+                ld      a,(0ffc6h)
+                rra
+                ld      b,1
+                jr      nc,e656
+                ld      b,0ch
+e656:           ld      hl,0fffdh
+e659:           ld      a,(hl)
+                call    0e713h
+                dec     hl
+                ld      a,(hl)
+                call    0e6ech
+                dec     hl
+                djnz    e659
+                ret
+;
+e666:           push    bc
+                push    hl
+e668:           ld      a,(hl)
+                call    0e6ech
+                inc     hl
+                djnz    e668
+                call    0e6ffh
+                call    0e6ffh
+                pop     hl
+                pop     bc
+e677:           ld      a,(hl)
+                and     7fh
+                ld      c,a
+                cp      ' '
+                jr      c,e683
+                cp      '{'
+                jr      c,e685
+e683:           ld      c,'.'
+e685:           call    pr
+                inc     hl                                    
+                djnz    e677
+                ret
+;
+headx:          db      " PC   AF  I IF  BC   DE   HL  A'"
+                db      "F' B'C' D'E' H'L'  IX   IY   SP"
+                db      0dh,0ah,3
+;
+status:         in      a,(0)      ; status
+                and     2          ;   (A)=0, not ready
+                ret     z          ;   (A)<>0, ready
+                ld      a,0ffh
+                ret
+;
+input:          call    status     ; input
+                jp      z,input
+                in      a,(1)
+                and     7fh
+                ret
+;
+print:          in      a,(0)      ; print char.
+                and     4          ;   in (C)
+                jp      z,print
+                ld      a,c
+                out     (1),a
+                ret
+;
+e6ec:           push    bc
+                call    0e713h
+                call    space
+                pop     bc
+                ret
+;
+crlf:           ld      c,0dh       ;   CR/LF
+                call    pr
+                ld      c,0ah
+                jp      pr
+;
+space:          ld      c,' '       ;  SPACE
+                jp      pr
+;
+e704:           ld      hl,0e68ch   ;  Msg
+e707:           ld      a,(hl)
+                cp      3
+                ret     z
+                ld      c,a
+                call    pr
+                inc     hl
+                jp      e707
+;
+e713:           push    af
+                rrca
+                rrca
+                rrca
+                rrca
+                call    0e71ch
+                pop     af
+e71c:           and     0fh
+                add     a,90h
+                daa
+                adc     a,'@'
+                daa
+                ld      c,a
+                jp      pr
+;
+e728:           sub     '0'
+                cp      0ah
+                ret     m
+                sub     7
+                ret 
+;
+e730:           cp      '0'
+                jp      c,0e746h
+                cp      ':'
+                jp      c,0e744h
+                cp      '@'
+                jp      c,0e746h
+                cp      'G'
+                jp      nc,0e746h
+e744:           xor     a          ; a=0
+                ret
+;
+e746:           xor     a          ; a=1
+                inc     a
+                ret
+;
+e749:           cp      ' '
+                ret     z
+                cp      '^'
+                jp      z,0e759h
+                cp      '.'
+                jp      z,init0
+                cp      0dh                                   
+                ret     nz
+e759:           push    bc
+                call    0e6f5h
+                pop     bc
+                xor     a
+                ret
+;
+e760:           ld      hl,0
+                ld      b,l
+e764:           call    0e77dh
+                inc     b
+                call    0e749h
+                ret     z
+                call    0e730h
+                ret     nz
+                ld      a,c
+                call    0e728h
+                add     hl,hl
+                add     hl,hl
+                add     hl,hl
+                add     hl,hl
+                add     a,l
+                ld      l,a
+                jp      0e764h
+;
+inandpr:        call    in
+                ld      c,a
+                jp      pr
+;
+e784:           xor     a
+                ld      hl,0ffd0h
+                push    hl
+                pop     ix
+                ld      (hl),a
+                ld      bc,9
+                ld      de,0ffd1h
+                ldir
+                ld      (0ffc7h),a
+e797:           call    0e760h
+                jp      nz,0e407h
+                ld      a,c
+                ld      (0ffc8h),a
+                cp      ' '
+                jr      z,e7a7
+                dec     b
+                ret     z
+e7a7:           ld      (ix+0),l
+                ld      (ix+1),h
+                ld      a,(0ffc7h)
+                inc     a
+                ld      (0ffc7h),a
+                inc     ix
+                inc     ix
+                ld      a,c
+                cp      ' '
+                jr      z,e797
+                ret
+;
+e7be:           ld      a,h
+                call    0e713h
+                ld      a,l
+                jp      0e6ech
+;
+                end

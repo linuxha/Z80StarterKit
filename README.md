@@ -19,3 +19,12 @@ I have a number of these types of development board (8085, 6800, 6809, 68HC11, 6
 - U33 - Extended ZBug with support for 2 serial ports.
 
 I'm currently working on getting the U32 and U33 ROMs disassembled. At the moment it appears my ROMs may have some bit rot.
+
+## ROM dumps
+
+| File | ROM | Address | Status |
+|---|---|---|---|
+| `zbug-u32.bin` / `zbug-u32.asm` | U32 - ZBUG monitor | 0000H-07FFH | **Bad dump - do not trust** |
+| `zbug-u33.bin` / `zbug-u33.asm` | U33 - Z80 CRT Monitor Ver 1.0 Rev 1.1 | 0800H-0FFFH | Looks clean, labelled listing |
+
+**The U32 dump is corrupt.** Data bit 6 (D6, pin 16 on a 2716) intermittently reads as 1 when it should be 0. For example, the first instruction reads `71 C0 63` instead of `31 C0 23` (`LD SP,23C0H`), and RAM addresses show up as both `23xx` and `63xx`. Bits only ever flip from 0 to 1, and the same byte reads correctly in some places and wrong in others, so it looks like a bad read (socket contact or timing) rather than a damaged ROM. It can't be fixed in software. Any `4xxx` or `6xxx` address in `zbug-u32.asm` is almost certainly one of these errors. U32 needs to be re-read (several times, comparing the dumps) before its listing can be relied on. See the header of `zbug-u32.asm` and `discussion.md` for details.
