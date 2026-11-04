@@ -1,0 +1,10 @@
+# Build files from make (see Makefile)
+TICTAC.PLM
+TICTAC.LST
+TICTAC.OBJ
+tictac.obj
+tictac.rel
+tictac.abs
+tictac.hex
+plm80.lib
+tic-tac-toe.hex

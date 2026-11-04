@@ -1,0 +1,239 @@
+/* TIC-TAC-TOE - PL/M-80 VERSION OF TIC-TAC-TOE.C                     */
+/*                                                                    */
+/* CONSOLE I/O FOR THE Z80 STARTER KIT: POLLED Z80-SIO, AS SET UP BY  */
+/* THE U33 CRT MONITOR (RUN THIS FROM THE CRT MONITOR SO THE SIO AND  */
+/* ITS BAUD RATE ARE ALREADY INITIALISED).                            */
+/*   CI: PROCEDURE BYTE       - WAIT FOR AND RETURN ONE CHARACTER     */
+/*   CO: PROCEDURE (C)        - OUTPUT ONE CHARACTER                  */
+/*                                                                    */
+/* SIO PORTS (SAME AS THE U33 MONITOR):                               */
+/*   95H DATA / 97H CONTROL - TERMINAL (CONSOLE)                      */
+/*   94H DATA / 96H CONTROL - OTHER SERIAL PORT (HOST)                */
+/* RR0 STATUS: BIT 0 = RX CHARACTER AVAILABLE, BIT 2 = TX BUFFER EMPTY */
+/*                                                                    */
+/* NOTE: THE U33 MONITOR USES SIO INTERRUPTS FOR KEYBOARD INPUT. THE  */
+/* MAIN PROGRAM STARTS WITH DISABLE SO THE MONITOR'S INTERRUPT        */
+/* ROUTINE CAN'T TAKE KEYS BEFORE CI SEES THEM.                       */
+
+TICTACTOE:
+DO;
+
+DECLARE TRUE      LITERALLY '0FFH',
+        FALSE     LITERALLY '0',
+        BOOLEAN   LITERALLY 'BYTE',
+        CR        LITERALLY '0DH',
+        LF        LITERALLY '0AH',
+        BADINPUT  LITERALLY '0FFH';
+
+DECLARE TERMDATA  LITERALLY '95H',      /* TERMINAL: SIO DATA         */
+        TERMCTL   LITERALLY '97H',      /* TERMINAL: SIO CONTROL      */
+        AUXDATA   LITERALLY '94H',      /* OTHER PORT: SIO DATA       */
+        AUXCTL    LITERALLY '96H',      /* OTHER PORT: SIO CONTROL    */
+        RXREADY   LITERALLY '01H',      /* RR0 BIT 0                  */
+        TXEMPTY   LITERALLY '04H';      /* RR0 BIT 2                  */
+
+DECLARE RESET ADDRESS DATA (0);         /* ZBUG RESET ENTRY (RST 0)   */
+
+/* WAIT FOR A CHARACTER FROM THE TERMINAL; STRIP THE PARITY BIT */
+CI: PROCEDURE BYTE;
+    OUTPUT(TERMCTL) = 0;                /* POINT AT RR0 */
+    DO WHILE (INPUT(TERMCTL) AND RXREADY) = 0;
+        OUTPUT(TERMCTL) = 0;
+    END;
+    RETURN INPUT(TERMDATA) AND 7FH;
+END CI;
+
+/* WAIT UNTIL THE TRANSMITTER IS EMPTY, THEN SEND C TO THE TERMINAL */
+CO: PROCEDURE (C);
+    DECLARE C BYTE;
+    OUTPUT(TERMCTL) = 0;                /* POINT AT RR0 */
+    DO WHILE (INPUT(TERMCTL) AND TXEMPTY) = 0;
+        OUTPUT(TERMCTL) = 0;
+    END;
+    OUTPUT(TERMDATA) = C;
+END CO;
+
+DECLARE BOARD(9) BYTE INITIAL ('123456789');
+
+/* WINNING COMBINATIONS (INDICES), THREE PER LINE */
+DECLARE WINS(24) BYTE DATA (
+    0, 1, 2,   3, 4, 5,   6, 7, 8,     /* ROWS      */
+    0, 3, 6,   1, 4, 7,   2, 5, 8,     /* COLUMNS   */
+    0, 4, 8,   2, 4, 6);               /* DIAGONALS */
+
+CRLF: PROCEDURE;
+    CALL CO(CR);
+    CALL CO(LF);
+END CRLF;
+
+/* PRINT A ZERO-TERMINATED STRING */
+PRINT: PROCEDURE (S);
+    DECLARE S ADDRESS, CH BASED S BYTE;
+    DO WHILE CH <> 0;
+        CALL CO(CH);
+        S = S + 1;
+    END;
+END PRINT;
+
+/* READ ONE CHARACTER AND ECHO IT */
+GETC: PROCEDURE BYTE;
+    DECLARE C BYTE;
+
+    C = CI;
+    IF C = CR THEN
+        CALL CRLF;
+    ELSE
+        CALL CO(C);
+
+    RETURN C;
+END GETC;
+
+PRINTROW: PROCEDURE (I);
+    DECLARE I BYTE;
+
+    CALL CO(' ');
+    CALL CO(BOARD(I));
+    CALL PRINT(.(' | ', 0));
+    CALL CO(BOARD(I + 1));
+    CALL PRINT(.(' | ', 0));
+    CALL CO(BOARD(I + 2));
+    CALL CO(' ');
+    CALL CRLF;
+END PRINTROW;
+
+DRAWBOARD: PROCEDURE;
+    CALL CRLF;
+    CALL PRINTROW(0);
+    CALL PRINT(.('---|---|---', CR, LF, 0));
+    CALL PRINTROW(3);
+    CALL PRINT(.('---|---|---', CR, LF, 0));
+    CALL PRINTROW(6);
+    CALL CRLF;
+END DRAWBOARD;
+
+CHECKWIN: PROCEDURE BOOLEAN;
+    DECLARE I BYTE;
+
+    DO I = 0 TO 21 BY 3;
+        IF BOARD(WINS(I)) = BOARD(WINS(I + 1)) AND
+           BOARD(WINS(I + 1)) = BOARD(WINS(I + 2)) THEN
+            RETURN TRUE;
+    END;
+
+    RETURN FALSE;
+END CHECKWIN;
+
+CHECKDRAW: PROCEDURE BOOLEAN;
+    DECLARE I BYTE;
+
+    DO I = 0 TO 8;
+        IF BOARD(I) <> 'X' AND BOARD(I) <> 'O' THEN
+            RETURN FALSE;               /* STILL EMPTY SPOTS LEFT */
+    END;
+
+    RETURN TRUE;
+END CHECKDRAW;
+
+/* READ A DECIMAL NUMBER, LIKE SCANF("%D"). LEADING BLANKS AND LINE   */
+/* ENDS ARE SKIPPED. RETURNS BADINPUT IF NO NUMBER WAS TYPED (THE     */
+/* REST OF THE LINE IS DISCARDED); LARGE VALUES ARE CLAMPED TO 254.   */
+READNUM: PROCEDURE BYTE;
+    DECLARE (C, N) BYTE;
+
+    C = GETC;
+
+    DO WHILE C = ' ' OR C = CR OR C = LF;
+        C = GETC;
+    END;
+
+    IF C < '0' OR C > '9' THEN
+    DO;
+        DO WHILE C <> CR AND C <> LF;   /* CLEAR INPUT BUFFER */
+            C = GETC;
+        END;
+        RETURN BADINPUT;
+    END;
+
+    N = 0;
+    DO WHILE C >= '0' AND C <= '9';
+        IF N < 25 THEN
+            N = N * 10 + (C - '0');
+        ELSE
+            N = 254;
+        C = GETC;
+    END;
+
+    RETURN N;
+END READNUM;
+
+/* MAIN PROGRAM */
+DECLARE PLAYER BYTE,                    /* PLAYER 1 IS 'X', 2 IS 'O' */
+        MARK BYTE,
+        CHOICE BYTE,
+        INDEX BYTE,
+        GAMEOVER BOOLEAN;
+
+DISABLE;                                /* KEEP THE U33 SIO INTERRUPT */
+                                        /* ROUTINE FROM TAKING KEYS   */
+PLAYER = 1;
+GAMEOVER = FALSE;
+
+DO WHILE NOT GAMEOVER;
+    CALL DRAWBOARD;
+    IF PLAYER = 1 THEN
+        MARK = 'X';
+    ELSE
+        MARK = 'O';
+
+    CALL PRINT(.('Player ', 0));
+    CALL CO('0' + PLAYER);
+    CALL PRINT(.(' (', 0));
+    CALL CO(MARK);
+    CALL PRINT(.('), enter a number (1-9): ', 0));
+
+    CHOICE = READNUM;
+    IF CHOICE = BADINPUT THEN
+    DO;
+        CALL PRINT(.('Invalid input. Please enter a number.', CR, LF, 0));
+    END;
+    ELSE
+    DO;
+        INDEX = CHOICE - 1;
+        IF CHOICE < 1 OR CHOICE > 9 THEN
+            CALL PRINT(.('Invalid move. Try again.', CR, LF, 0));
+        ELSE IF BOARD(INDEX) = 'X' OR BOARD(INDEX) = 'O' THEN
+            CALL PRINT(.('Invalid move. Try again.', CR, LF, 0));
+        ELSE
+        DO;
+            BOARD(INDEX) = MARK;
+
+            IF CHECKWIN THEN
+            DO;
+                CALL DRAWBOARD;
+                CALL PRINT(.('Player ', 0));
+                CALL CO('0' + PLAYER);
+                CALL PRINT(.(' (', 0));
+                CALL CO(MARK);
+                CALL PRINT(.(') wins!', CR, LF, 0));
+                GAMEOVER = TRUE;
+            END;
+            ELSE IF CHECKDRAW THEN
+            DO;
+                CALL DRAWBOARD;
+                CALL PRINT(.('It''s a draw!', CR, LF, 0));
+                GAMEOVER = TRUE;
+            END;
+
+            PLAYER = 3 - PLAYER;
+        END;
+    END;
+END;
+
+/* GAME OVER: RESTART THROUGH ZBUG'S RESET ENTRY (WHICH STARTS THE U33 */
+/* MONITOR) INSTEAD OF THE COMPILER'S EI/HALT, WHICH CAN RUN ON INTO   */
+/* CI AND CRASH WHEN A KEY INTERRUPT ARRIVES. PL/M-80 V4.0 WON'T TAKE  */
+/* "GOTO 0", SO CALL ADDRESS 0 INDIRECTLY; ZBUG RESETS SP AND NEVER    */
+/* RETURNS.                                                            */
+CALL RESET;
+
+END TICTACTOE;
