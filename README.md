@@ -34,3 +34,9 @@ I'm currently working on getting the U32 and U33 ROMs disassembled. At the momen
 **`zbug-u32-repaired.bin` fixes it.** It was built from a clean ZBUG image (`SDS-Z80.BIN`, not in this repo) with this board's two local changes put back. The clean image differs from the dump in 72 bytes. In 70 of them, bit 6 is set in the dump and clear in the clean image. The other two are this board's changes: the PROM programmer copies from `2800H` instead of `2000H` (at 05DEH and 05FEH), probably to use the extra RAM. So the repaired image is the dump with those 70 bad bits cleared.
 
 `zbug-u32.asm` uses the label names from the original ZBUG listing in the Z80 Starter Kit Operations Manual, Appendix II (modules RESTR V1.7, DISUP V0.3, DECKY V2.1, UTIL V1.5). `zbug-u33.asm` uses the same names for its calls into ZBUG. See `discussion.md` for how the dumps were analysed.
+
+## Programs
+
+| Folder | Description |
+|---|---|
+| [`tictactoe/`](tictactoe/) | Two-player tic-tac-toe in PL/M-80, played on a serial terminal through the U33 monitor's SIO. Built with the ISIS-II tools; loads at 3000H, runs from 30E5H. See [`tictactoe/README.md`](tictactoe/README.md). |
