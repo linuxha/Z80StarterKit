@@ -1,39 +1,40 @@
 ;======================================================================
 ; ZBUG / Z80 CRT MONITOR VER 1.0 REV 1.1  --  U33 (0800H-0FFFH)
 ; Disassembled from zbug-u33.bin.  Labels and comments are inferred.
-; Requires U32 (0000H-07FFH) for the routines named U_xxxx.
+; Calls into ZBUG (U32, 0000H-07FFH) use the original ZBUG label names
+; from the Z80 Starter Kit manual, Appendix II (see zbug-u32.asm).
 ;
 ; Memory map (ESoCoP restoration notes): U32 0000-07FF, U33 0800-0FFF,
 ; RAM 2000-27FF.  Address check of this ROM:
 ;  - every absolute address is inside that map (0004/0020/0060/2000/
 ;    FFF5 are counts or offsets, not addresses)
 ;  - every jump/call target in U33 lands on an instruction start
-;  - all 10 U32 targets land on instruction starts in the U32 dump,
-;    but that dump has bit-6 read errors, so they are unverified
-;  - '!!' marks suspect addresses: 099A (27E6H immediate), the five
-;    command names padded with 0FFH, and 00AE in the U32 dump
+;  - all 10 ZBUG targets are checked against the clean ZBUG image and
+;    the original listing: each is a routine entry point
+;  - '!!' marks suspect addresses: 099A (27E6H immediate) and the five
+;    command names padded with 0FFH
 ;======================================================================
 
 CR          EQU   000DH               
 LF          EQU   000AH               
-U_BRKRET    EQU   00AEH               ; U32: breakpoint/step return
-U_KEYMON    EQU   00F4H               ; U32: keypad monitor main loop
-U_RESUME    EQU   0247H               ; U32: restore registers and resume user program
-U_KEYENT    EQU   0272H               ; U32: keypad monitor entry
-U_WRTAPE    EQU   04CAH               ; U32: cassette write
-U_RDTAPE    EQU   0581H               ; U32: cassette read
-U_0604      EQU   0604H               ; U32: (after EPROM program)
-U_DISPHEX   EQU   063CH               ; U32: put A as 2 hex digits in display buffer (IX)
-U_PACK4     EQU   0659H               ; U32: pack 4 nibbles at 23F7H -> HL
-U_HEXASC    EQU   06BBH               ; U32: low nibble of A -> ASCII
-MONSTK      EQU   23A8H               ; RAM: monitor stack top when no user frame
-TAPEEND     EQU   23C0H               ; RAM: tape end/start parameters (byte-swapped)
-TAPESTART   EQU   23C2H               
-EPRFLAG     EQU   23DAH               
-USERSP      EQU   23E2H               ; RAM: saved user SP (register frame)
-BPTAB       EQU   23E4H               ; RAM: breakpoint table, 3 bytes x 5
-BPCOUNT     EQU   23F4H               ; RAM: number of breakpoints
-DISPBUF     EQU   23F7H               ; RAM: keypad display / nibble buffer
+RESTR1      EQU   00AEH               ; U32 ZBUG: restart monitor (clear flags, prompt)
+DISUP       EQU   00F4H               ; U32 ZBUG: display update + keypad loop
+CCS1A       EQU   0247H               ; U32 ZBUG: proceed (install BPs, restore regs, run)
+CCS2        EQU   0272H               ; U32 ZBUG: SS key - single step
+CCS10       EQU   04CAH               ; U32 ZBUG: PUNCH - cassette write
+CCS11       EQU   0581H               ; U32 ZBUG: LOAD - cassette read
+CCS12B      EQU   0604H               ; U32 ZBUG: verify PROM against RAM
+UFOR1       EQU   063CH               ; U32 ZBUG: A -> two hex digits at (IX),(IX+1)
+UFOR2       EQU   0659H               ; U32 ZBUG: first 4 DISMEM digits -> HL
+UBASC       EQU   06BBH               ; U32 ZBUG: binary digit in A -> ASCII
+ZBUGSP      EQU   23A8H               ; ZBUG stack top
+PUNHS       EQU   23C0H               ; ZBUG: punch start address (high, low)
+PUNHE       EQU   23C2H               ; ZBUG: punch end address (high, low)
+PRFLG       EQU   23DAH               ; ZBUG: PROM programming mode flag
+STKPT       EQU   23E2H               ; ZBUG: saved user SP (register frame)
+BPTAB       EQU   23E4H               ; ZBUG: breakpoint table, 3 bytes x 5
+BFLG        EQU   23F4H               ; ZBUG: number of breakpoints
+DISMEM      EQU   23F7H               ; ZBUG: display memory (8 digits)
 CRTFLAGS    EQU   27E1H               ; RAM: b0 duplex, b1 Myron, b2 Myron line, b3 Myron col
 GOADDR      EQU   27E2H               ; RAM: target for GOTRAMP
 MONSP       EQU   27E4H               ; RAM: monitor SP at prompt
@@ -44,8 +45,8 @@ REGPTR      EQU   27EEH               ; RAM: LD command register pointer
 
 CTC0        EQU   84H
 CTC2        EQU   86H
-PORT8C      EQU   8CH
-PORT90      EQU   90H
+DIGLH       EQU   8CH
+KBSEL       EQU   90H
 SIOAD       EQU   94H
 SIOBD       EQU   95H
 SIOAC       EQU   96H
@@ -84,15 +85,15 @@ LOADER:     EXX                         ; 0809  D9
             EI                          ; 0817  FB
             CALL LDREC                  ; 0818  CD 34 08
             CALL SIORST                 ; 081B  CD CA 08
-            JP Z,U_BRKRET               ; 081E  CA AE 00  !! U32 dump here reads CALL 46C6H - bit-6 error, probably CALL 06C6H
-            LD IX,DISPBUF               ; 0821  DD 21 F7 23
+            JP Z,RESTR1                 ; 081E  CA AE 00  ZBUG RESTR1 (the bad U32 dump reads CALL 46C6H here; real CALL 0686H)
+            LD IX,DISMEM                ; 0821  DD 21 F7 23
             LD A,H                      ; 0825  7C
-            CALL U_DISPHEX              ; 0826  CD 3C 06  -> U32 (unverified: U32 dump has bit-6 read errors)
+            CALL UFOR1                  ; 0826  CD 3C 06  -> ZBUG (U32)
             INC IX                      ; 0829  DD 23
             INC IX                      ; 082B  DD 23
             LD A,L                      ; 082D  7D
-            CALL U_DISPHEX              ; 082E  CD 3C 06  -> U32 (unverified: U32 dump has bit-6 read errors)
-            JP U_KEYMON                 ; 0831  C3 F4 00  -> U32 (unverified: U32 dump has bit-6 read errors)
+            CALL UFOR1                  ; 082E  CD 3C 06  -> ZBUG (U32)
+            JP DISUP                    ; 0831  C3 F4 00  -> ZBUG (U32)
 
 ; ------------------------------------------------------------
 ; Wait for record start (nibble value 3), read 3-byte header
@@ -218,7 +219,8 @@ SIORST:     LD A,18H                    ; 08CA  3E 18
             RET                         ; 08D0  C9
 
 ; ------------------------------------------------------------
-; EPROM programmer: copy BC=src..end to DE, pulsing via CTC/PIO
+; EPROM programmer: like ZBUG CCS12A but with any source/dest;
+; copy BC=start..HL=end to DE, set PRFLG, then verify via ZBUG CCS12B
 ; ------------------------------------------------------------
 EPROG:      PUSH BC                     ; 08D1  C5
             INC HL                      ; 08D2  23
@@ -237,10 +239,10 @@ EPRLP:      LD A,25H                    ; 08E0  3E 25
             LD A,0CBH                   ; 08E4  3E CB
             OUT (CTC2),A                ; 08E6  D3 86
             LD A,80H                    ; 08E8  3E 80
-            OUT (PORT8C),A              ; 08EA  D3 8C
+            OUT (DIGLH),A               ; 08EA  D3 8C
             LDI                         ; 08EC  ED A0
             LD A,00H                    ; 08EE  3E 00
-            OUT (PORT8C),A              ; 08F0  D3 8C
+            OUT (DIGLH),A               ; 08F0  D3 8C
             LD A,03H                    ; 08F2  3E 03
             OUT (CTC2),A                ; 08F4  D3 86
             JP PE,EPRLP                 ; 08F6  EA E0 08
@@ -248,8 +250,8 @@ EPRLP:      LD A,25H                    ; 08E0  3E 25
             POP HL                      ; 08FA  E1
             POP DE                      ; 08FB  D1
             LD A,01H                    ; 08FC  3E 01
-            LD (EPRFLAG),A              ; 08FE  32 DA 23
-            JP U_0604                   ; 0901  C3 04 06  -> U32 (unverified: U32 dump has bit-6 read errors)
+            LD (PRFLG),A                ; 08FE  32 DA 23
+            JP CCS12B                   ; 0901  C3 04 06  -> ZBUG (U32)
 EPRDONE:    PUSH BC                     ; 0904  C5
             POP HL                      ; 0905  E1
             JP 0821H                    ; 0906  C3 21 08
@@ -260,13 +262,13 @@ EPRDONE:    PUSH BC                     ; 0904  C5
 MONINIT:    CALL CRTINIT                ; 0909  CD 7B 0D
             XOR A                       ; 090C  AF
             OUT (PORT98),A              ; 090D  D3 98
-            LD HL,MONSTK                ; 090F  21 A8 23
+            LD HL,ZBUGSP                ; 090F  21 A8 23
             SBC HL,SP                   ; 0912  ED 72
             JR NZ,BRKENT                ; 0914  20 15
-            LD HL,(USERSP)              ; 0916  2A E2 23
+            LD HL,(STKPT)               ; 0916  2A E2 23
             DEC HL                      ; 0919  2B
             DEC HL                      ; 091A  2B
-            LD (USERSP),HL              ; 091B  22 E2 23
+            LD (STKPT),HL               ; 091B  22 E2 23
             DEC SP                      ; 091E  3B
             DEC SP                      ; 091F  3B
             LD (CRTFLAGS),A             ; 0920  32 E1 27
@@ -278,7 +280,7 @@ MONINIT:    CALL CRTINIT                ; 0909  CD 7B 0D
 ; Entered from a breakpoint/RST: tidy flags then dump registers
 ; ------------------------------------------------------------
 BRKENT:     LD BC,0FFF5H                ; 092B  01 F5 FF
-            LD HL,(USERSP)              ; 092E  2A E2 23
+            LD HL,(STKPT)               ; 092E  2A E2 23
             ADD HL,BC                   ; 0931  09
             LD A,(HL)                   ; 0932  7E
             AND 04H                     ; 0933  E6 04
@@ -290,7 +292,7 @@ BRKENT:     LD BC,0FFF5H                ; 092B  01 F5 FF
 ; ------------------------------------------------------------
 SHOWREGS:   LD HL,MSGMAIN               ; 0939  21 EA 0E
             CALL PUTS                   ; 093C  CD 1B 0C
-            LD HL,(USERSP)              ; 093F  2A E2 23
+            LD HL,(STKPT)               ; 093F  2A E2 23
             LD DE,REGTAB                ; 0942  11 6E 0F
             PUSH HL                     ; 0945  E5
             PUSH HL                     ; 0946  E5
@@ -372,7 +374,7 @@ CMD_REG:    CP 0DH                      ; 09C4  FE 0D
             JP SHOWREGS                 ; 09C8  C3 39 09
 
 ; ------------------------------------------------------------
-; JP [addr] - resume/go via U32 restart code
+; JP [addr] - run/proceed via ZBUG CCS1A
 ; ------------------------------------------------------------
 CMD_JP:     CP 0DH                      ; 09CB  FE 0D
             JR Z,JPRESUME               ; 09CD  28 0D
@@ -383,13 +385,13 @@ CMD_JP:     CP 0DH                      ; 09CB  FE 0D
             LD (GOADDR),HL              ; 09D7  22 E2 27
             JR JPGO                     ; 09DA  18 03
 JPRESUME:   CALL SETGO                  ; 09DC  CD E2 09
-JPGO:       JP U_RESUME                 ; 09DF  C3 47 02  -> U32 (unverified: U32 dump has bit-6 read errors)
+JPGO:       JP CCS1A                    ; 09DF  C3 47 02  -> ZBUG (U32)
 
 ; ------------------------------------------------------------
 ; Patch saved PC on user stack to GOTRAMP, remember old PC in GOADDR
 ; ------------------------------------------------------------
 SETGO:      PUSH HL                     ; 09E2  E5
-            LD HL,(USERSP)              ; 09E3  2A E2 23
+            LD HL,(STKPT)               ; 09E3  2A E2 23
             DEC HL                      ; 09E6  2B
             LD D,(HL)                   ; 09E7  56
             LD (HL),09H                 ; 09E8  36 09
@@ -405,7 +407,7 @@ SETGO:      PUSH HL                     ; 09E2  E5
 ; Trampoline: switch port 98H, then jump to (GOADDR)
 ; ------------------------------------------------------------
 GOTRAMP:    PUSH AF                     ; 09F6  F5
-            IN A,(PORT90)               ; 09F7  DB 90
+            IN A,(KBSEL)                ; 09F7  DB 90
             LD A,01H                    ; 09F9  3E 01
             OUT (PORT98),A              ; 09FB  D3 98
             POP AF                      ; 09FD  F1
@@ -501,7 +503,7 @@ BPSLOT1:    INC IY                      ; 0A93  FD 23
             INC IY                      ; 0A97  FD 23
             DJNZ BPSLOT1                ; 0A99  10 F8
 BPSTORE:    INC A                       ; 0A9B  3C
-            LD (BPCOUNT),A              ; 0A9C  32 F4 23
+            LD (BFLG),A                 ; 0A9C  32 F4 23
             LD (IY+00H),H               ; 0A9F  FD 74 00
             LD (IY+01H),L               ; 0AA2  FD 75 01
             LD B,H                      ; 0AA5  44
@@ -510,7 +512,7 @@ BPSTORE:    INC A                       ; 0A9B  3C
             CALL CRLF                   ; 0AAA  CD 0F 0C
             RET                         ; 0AAD  C9
 BPCLEAR:    XOR A                       ; 0AAE  AF
-            LD (BPCOUNT),A              ; 0AAF  32 F4 23
+            LD (BFLG),A                 ; 0AAF  32 F4 23
 BPLIST:     CALL SHOWBPS                ; 0AB2  CD B9 0A
             CALL CRLF                   ; 0AB5  CD 0F 0C
             RET                         ; 0AB8  C9
@@ -520,7 +522,7 @@ BPLIST:     CALL SHOWBPS                ; 0AB2  CD B9 0A
 ; ------------------------------------------------------------
 SHOWBPS:    LD HL,MSGBPS                ; 0AB9  21 CF 0E
             CALL PUTS                   ; 0ABC  CD 1B 0C
-            LD A,(BPCOUNT)              ; 0ABF  3A F4 23
+            LD A,(BFLG)                 ; 0ABF  3A F4 23
             OR A                        ; 0AC2  B7
             RET Z                       ; 0AC3  C8
             LD HL,BPTAB                 ; 0AC4  21 E4 23
@@ -540,13 +542,13 @@ SHOWBP1:    PUSH AF                     ; 0AC8  F5
             RET                         ; 0AD9  C9
 
 ; ------------------------------------------------------------
-; S - leave CRT monitor, back to U32 keypad monitor
+; S - single step one instruction (ZBUG CCS2), CR only
 ; ------------------------------------------------------------
 CMD_S:      CP 0DH                      ; 0ADA  FE 0D
             SCF                         ; 0ADC  37
             RET NZ                      ; 0ADD  C0
-            CALL TOKEYPAD               ; 0ADE  CD 3B 0C
-            JP U_KEYENT                 ; 0AE1  C3 72 02  -> U32 (unverified: U32 dump has bit-6 read errors)
+            CALL SSPREP                 ; 0ADE  CD 3B 0C
+            JP CCS2                     ; 0AE1  C3 72 02  -> ZBUG (U32)
 
 ; ------------------------------------------------------------
 ; DOWN name [addr] - send 'COPY name' to host on SIO-A, then load
@@ -620,25 +622,25 @@ MEMPRV:     DEC HL                      ; 0B59  2B
             JR MEMLP                    ; 0B5A  18 CB
 
 ; ------------------------------------------------------------
-; RDTAPE - read cassette (U32 routine)
+; RDTAPE - read cassette (ZBUG CCS11)
 ; ------------------------------------------------------------
 CMD_RDTAPE: CALL SIOOFF                 ; 0B5C  CD 41 0C
-            JP U_RDTAPE                 ; 0B5F  C3 81 05  -> U32 (unverified: U32 dump has bit-6 read errors)
+            JP CCS11                    ; 0B5F  C3 81 05  -> ZBUG (U32)
 
 ; ------------------------------------------------------------
-; WRTAPE start end - write cassette (U32 routine)
+; WRTAPE start end - write cassette (ZBUG CCS10; PUNHS/PUNHE)
 ; ------------------------------------------------------------
 CMD_WRTAPE: CALL GET2ADDR               ; 0B62  CD FF 0B
             RET C                       ; 0B65  D8
             LD A,H                      ; 0B66  7C
             LD H,L                      ; 0B67  65
             LD L,A                      ; 0B68  6F
-            LD (TAPESTART),HL           ; 0B69  22 C2 23
+            LD (PUNHE),HL               ; 0B69  22 C2 23
             LD L,B                      ; 0B6C  68
             LD H,C                      ; 0B6D  61
-            LD (TAPEEND),HL             ; 0B6E  22 C0 23
+            LD (PUNHS),HL               ; 0B6E  22 C0 23
             CALL SIOOFF                 ; 0B71  CD 41 0C
-            JP U_WRTAPE                 ; 0B74  C3 CA 04  -> U32 (unverified: U32 dump has bit-6 read errors)
+            JP CCS10                    ; 0B74  C3 CA 04  -> ZBUG (U32)
 
 ; ------------------------------------------------------------
 ; LD rr - show register from REGTAB and accept a new value
@@ -683,7 +685,7 @@ LDPNAME:    LD A,(HL)                   ; 0B94  7E
 LDOFS:      POP AF                      ; 0BB5  F1
 LDOFS1:     LD C,A                      ; 0BB6  4F
             LD B,0FFH                   ; 0BB7  06 FF
-            LD HL,(USERSP)              ; 0BB9  2A E2 23
+            LD HL,(STKPT)               ; 0BB9  2A E2 23
             ADD HL,BC                   ; 0BBC  09
             LD A,3DH                    ; 0BBD  3E 3D
             CALL PUTCH                  ; 0BBF  CD 4B 0D
@@ -785,10 +787,10 @@ EXPSP:      CP 20H                      ; 0C30  FE 20
             JP CMDERR                   ; 0C38  C3 A7 09
 
 ; ------------------------------------------------------------
-; Out 1 to 8CH and 98H, then SIOOFF
+; Before single step: out 1 to DIGLH (8CH) and 98H, then SIOOFF
 ; ------------------------------------------------------------
-TOKEYPAD:   LD A,01H                    ; 0C3B  3E 01
-            OUT (PORT8C),A              ; 0C3D  D3 8C
+SSPREP:     LD A,01H                    ; 0C3B  3E 01
+            OUT (DIGLH),A               ; 0C3D  D3 8C
             OUT (PORT98),A              ; 0C3F  D3 98
 
 ; ------------------------------------------------------------
@@ -917,11 +919,11 @@ GETHEXB:    LD DE,LINEBUF               ; 0CE6  11 E8 27
 ; Parse 4 hex digits at DE -> HL (via U32 0659H), Cy=1 on error
 ; ------------------------------------------------------------
 GETHEX4:    LD B,04H                    ; 0CE9  06 04
-            LD HL,DISPBUF               ; 0CEB  21 F7 23
+            LD HL,DISMEM                ; 0CEB  21 F7 23
 GH4LP:      CALL HEXDIG                 ; 0CEE  CD F8 0C
             RET C                       ; 0CF1  D8
             DJNZ GH4LP                  ; 0CF2  10 FA
-            CALL U_PACK4                ; 0CF4  CD 59 06  -> U32 (unverified: U32 dump has bit-6 read errors)
+            CALL UFOR2                  ; 0CF4  CD 59 06  -> ZBUG (U32)
             RET                         ; 0CF7  C9
 
 ; ------------------------------------------------------------
@@ -983,10 +985,10 @@ PRHEX2:     LD A,B                      ; 0D32  78
             SRL A                       ; 0D35  CB 3F
             SRL A                       ; 0D37  CB 3F
             SRL A                       ; 0D39  CB 3F
-            CALL U_HEXASC               ; 0D3B  CD BB 06  -> U32 (unverified: U32 dump has bit-6 read errors)
+            CALL UBASC                  ; 0D3B  CD BB 06  -> ZBUG (U32)
             CALL PUTCH                  ; 0D3E  CD 4B 0D
             LD A,B                      ; 0D41  78
-            CALL U_HEXASC               ; 0D42  CD BB 06  -> U32 (unverified: U32 dump has bit-6 read errors)
+            CALL UBASC                  ; 0D42  CD BB 06  -> ZBUG (U32)
             CALL PUTCH                  ; 0D45  CD 4B 0D
             RET                         ; 0D48  C9
 
@@ -1187,7 +1189,7 @@ CMDTAB:     DB    'S',0                 ; 0F11  53 00 DA 0A
             DB    0                     ; 0F6D  00  end of table
 
 ; ------------------------------------------------------------
-; Register table: 3-char name, frame offset (from USERSP)
+; Register table: 3-char name, frame offset (from STKPT)
 ; ------------------------------------------------------------
 REGTAB:     DB    'AF=',0FDH            ; 0F6E  41 46 3D FD  offset -3
             DB    'BC=',0FBH            ; 0F72  42 43 3D FB  offset -5

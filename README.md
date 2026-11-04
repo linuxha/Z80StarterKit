@@ -24,7 +24,13 @@ I'm currently working on getting the U32 and U33 ROMs disassembled. At the momen
 
 | File | ROM | Address | Status |
 |---|---|---|---|
-| `zbug-u32.bin` / `zbug-u32.asm` | U32 - ZBUG monitor | 0000H-07FFH | **Bad dump - do not trust** |
-| `zbug-u33.bin` / `zbug-u33.asm` | U33 - Z80 CRT Monitor Ver 1.0 Rev 1.1 | 0800H-0FFFH | Looks clean, labelled listing |
+| `zbug-u32.bin` | U32 - ZBUG monitor | 0000H-07FFH | Original dump - **bad bit 6, do not use** |
+| `zbug-u32-repaired.bin` | U32 - ZBUG monitor | 0000H-07FFH | Repaired image (see below) |
+| `zbug-u32.asm` | U32 - ZBUG monitor | 0000H-07FFH | Labelled listing of the repaired image |
+| `zbug-u33.bin` / `zbug-u33.asm` | U33 - Z80 CRT Monitor Ver 1.0 Rev 1.1 | 0800H-0FFFH | Clean dump, labelled listing |
 
-**The U32 dump is corrupt.** Data bit 6 (D6, pin 16 on a 2716) intermittently reads as 1 when it should be 0. For example, the first instruction reads `71 C0 63` instead of `31 C0 23` (`LD SP,23C0H`), and RAM addresses show up as both `23xx` and `63xx`. Bits only ever flip from 0 to 1, and the same byte reads correctly in some places and wrong in others, so it looks like a bad read (socket contact or timing) rather than a damaged ROM. It can't be fixed in software. Any `4xxx` or `6xxx` address in `zbug-u32.asm` is almost certainly one of these errors. U32 needs to be re-read (several times, comparing the dumps) before its listing can be relied on. See the header of `zbug-u32.asm` and `discussion.md` for details.
+**The original U32 dump is corrupt.** Data bit 6 (D6, pin 16 on a 2716) intermittently reads as 1 when it should be 0. For example, the first instruction reads `71 C0 63` instead of `31 C0 23` (`LD SP,23C0H`). Bits only ever flip from 0 to 1, so it looks like a bad read (socket contact or timing) rather than a damaged ROM.
+
+**`zbug-u32-repaired.bin` fixes it.** It was built from a clean ZBUG image (`SDS-Z80.BIN`, not in this repo) with this board's two local changes put back. The clean image differs from the dump in 72 bytes. In 70 of them, bit 6 is set in the dump and clear in the clean image. The other two are this board's changes: the PROM programmer copies from `2800H` instead of `2000H` (at 05DEH and 05FEH), probably to use the extra RAM. So the repaired image is the dump with those 70 bad bits cleared.
+
+`zbug-u32.asm` uses the label names from the original ZBUG listing in the Z80 Starter Kit Operations Manual, Appendix II (modules RESTR V1.7, DISUP V0.3, DECKY V2.1, UTIL V1.5). `zbug-u33.asm` uses the same names for its calls into ZBUG. See `discussion.md` for how the dumps were analysed.

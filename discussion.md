@@ -24,7 +24,7 @@ should be 0 on many bytes. No Z80 disassembler was installed, so I wrote a small
 | `71 C0 63` at 0000 | `31 C0 23` | `LD SP,23C0H`, the usual first instruction of a monitor |
 | `58 43` after the RST vectors at 0008, 0010, 0018… | `18 03` | `JR +3`. The RST 28H vector at 002E has a clean `18 03`, so the bad bytes are the same thing with bit 6 set |
 | `LD (63E2H),SP` / `LD (23E2H),IX` | `23E2H` | The same variable read two ways. There are 115 references to `23xx` and only 7 to `63xx`, so RAM is at `23xx` |
-| `CALL 467CH` | `CALL 067CH` | 65 calls go to `06xx` and only 4 to `46xx` |
+| `CALL 467CH` at 0087 | `CALL 063CH` | 65 calls go to `06xx` and only 4 to `46xx`. *(Corrected: I originally guessed `CALL 067CH`; the clean image in section 5 shows bit 6 was also wrong in the low byte.)* |
 | `JP 40F4H` | `JP 00F4H` | `zbug-u33.bin` has a clean `JP 00F4H` at 0031 |
 
 The errors only ever turn a 0 into a 1, and they're intermittent: the same byte reads
@@ -112,7 +112,7 @@ routine at 0CBF compares the typed line against each name and jumps to its handl
 
 | Command | Handler | What it does |
 |---|---|---|
-| `S` | 0ADA `CMD_S` | Leave the CRT monitor and go back to the U32 keypad monitor (0272H) |
+| `S` | 0ADA `CMD_S` | Single step one instruction: jumps to ZBUG `CCS2` (0272H), the SS key handler. *(Corrected: I originally said it returned to the keypad monitor.)* |
 | `BP [addr\|?]` | 0A6C `CMD_BP` | Set a breakpoint (up to 5, otherwise "NO MORE!"); `?` lists them; no argument clears them |
 | `JP [addr]` | 09CB `CMD_JP` | Run or resume a program, using U32's resume code at 0247H |
 | `LD rr` | 0B77 `CMD_LD` | Show one saved register and accept a new value |
@@ -172,13 +172,15 @@ Every jump and call target inside U33 lands on an instruction start or a known t
 | Addr | Issue |
 |---|---|
 | 099A | `LD HL,27E6H` loads a fixed value, so the zero test at 099D can never be true; the RAM table at 27E6H is always searched. Almost certainly meant `LD HL,(27E6H)`. |
-| 081E | `JP Z,00AEH` goes to U32. In the U32 dump the instruction at 00AE reads `CALL 46C6H`, outside the memory map — another bit-6 read error, probably `CALL 06C6H`. |
+| 081E | `JP Z,00AEH` goes to U32. In the U32 dump the instruction at 00AE reads `CALL 46C6H`, outside the memory map — another bit-6 read error. *(Corrected: I guessed `CALL 06C6H`; the real instruction is `CALL 0686H`, ZBUG's `UFGCR`. 00AE is `RESTR1`, and the U33 code there is fine.)* |
 | 0F35, 0F3E, 0F47, 0F4F, 0F5E | Command names RDTA, WRTA, EPRO, MYRO, DUPL are padded with `FF` and can never match typed input. |
 
 **Unverified (noted, not flagged):** the other U32 entry points (00F4, 0247, 0272,
 04CA, 0581, 0604, 063C, 0659, 06BB) each land on an instruction start and the code
 there fits how U33 uses it (e.g. 06BB starts the hex-to-ASCII conversion). Because of
 the bit-6 errors in the U32 dump they're marked "unverified" until there's a clean read.
+*(Update: all ten are now verified against the clean ZBUG image and the original
+listing — see section 6.)*
 
 **Tight but correct (commented, not flagged):**
 - The input buffer at 27E8H holds up to 24 characters, ending exactly at 27FFH, the
@@ -187,3 +189,63 @@ the bit-6 errors in the U32 dump they're marked "unverified" until there's a cle
   only because those commands limit input to 3 and 5 characters.
 - At 0DC6 there's a deliberate `CALL` to a `RETI` to clear the SIO interrupt chain.
 - At 0DE4 a stray `POP HL` is harmless because every path out reloads the stack pointer.
+
+---
+
+## 5. Input
+
+> disassemble @t/SDS-Z80.BIN
+
+## 5. Output
+
+`t/SDS-Z80.BIN` is a clean copy of the ZBUG ROM in U32. It starts `31 C0 23`
+(`LD SP,23C0H`), as predicted, and its RAM references are all `23xx`. (The file had no
+permissions; I added read permission for the owner to read it.)
+
+Compared with `zbug-u32.bin`, 72 bytes differ:
+- **70 differ only in bit 6, and in every case the dump has it set.** That confirms the
+  diagnosis: D6 reads as 1 when it shouldn't.
+- **2 differ in bit 3 and look deliberate.** At 05DE and 05FE, ZBUG's PROM programmer
+  has `LD HL,2000H`; this board's ROM has `LD HL,2800H` in both places. The original
+  listing in the manual also has 2000H, so this is a local change, probably so the
+  programmer copies from the extra RAM at 2800H.
+
+Two of my earlier guesses were wrong because bit 6 was also bad in low bytes:
+
+| Addr | Dump | I guessed | Actual |
+|---|---|---|---|
+| 0087 | `CALL 467CH` | `CALL 067CH` | `CALL 063CH` |
+| 00AE | `CALL 46C6H` | `CALL 06C6H` | `CALL 0686H` |
+
+`t/sdmonv21a.7z` and `Docs/Z80StarterKit-sdmon.mac.txt` are SD Monitor v2.10 for the
+SBC-100/200, a different monitor, so they can't be used to check ZBUG.
+
+---
+
+## 6. Input
+
+> do all three  *(correct the wrong guesses, build a repaired U32 image, make a labelled U32 listing)*
+
+## 6. Output
+
+- **`zbug-u32-repaired.bin`** is `t/SDS-Z80.BIN` with this board's two `2800H` bytes
+  put back. Checked: it equals `zbug-u32.bin` with bit 6 cleared in exactly the 70 bad
+  bytes, and every other byte is identical.
+- **`zbug-u32.asm`** is now a labelled listing of the repaired image, using the label
+  names from the original ZBUG listing in the Z80 Starter Kit manual, Appendix II
+  (modules RESTR V1.7, DISUP V0.3, DECKY V2.1, UTIL V1.5). It decodes the jump table for
+  the 12 command keys, the segment / key / register tables and the CTC vector table,
+  and marks the two Mercer changes with `!!`. Checked: the byte column of the listing
+  reproduces the repaired image exactly.
+- **`zbug-u33.asm`** now uses the official ZBUG names for every call into U32 (`RESTR1`,
+  `DISUP`, `CCS1A`, `CCS2`, `CCS10`, `CCS11`, `CCS12B`, `UFOR1`, `UFOR2`, `UBASC`) and
+  for ZBUG's RAM variables. This fixed three mistakes:
+  - The `S` command is single step (`CCS2`), not a return to the keypad monitor.
+  - I had the tape start and end addresses swapped: `PUNHS` (23C0) is the start and
+    `PUNHE` (23C2) is the end.
+  - The 081E note said 00AE was probably `CALL 06C6H`; it's `CALL 0686H`.
+- The wrong statements earlier in this file are corrected in place, marked *Corrected*.
+
+Memory map from the manual (section 3-18): ZBUG 0000–07FF, PROM1 (U33) 0800–0FFF,
+PROM2 / programmer socket (U34) 1000–17FF, RAM 2000–23FF plus optional 2400–27FF.
+ZBUG uses 2390–23FF.
